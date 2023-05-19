@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/shipwright-io/build/pkg/apis/build/v1alpha1"
 	"github.com/shipwright-io/triggers/pkg/filter"
@@ -111,6 +112,42 @@ func (r *CustomRunReconciler) reflectBuildRunStatusOnTektonCustomRun(
 			LastTransitionTime: apis.VolatileTime{Inner: metav1.Now()},
 		}}
 	}
+	customRun.Status.Results = reflectResult(br)
+}
+
+// reflectResult reflects the Result on the Run instance.
+func reflectResult(br *v1alpha1.BuildRun) []tknv1beta1.CustomRunResult {
+	outputImage := ""
+
+	if br.Spec.Output != nil {
+		outputImage = br.Spec.Output.Image
+	} else if br.Status.BuildSpec != nil {
+		outputImage = br.Status.BuildSpec.Output.Image
+	}
+
+	imageTag := "latest"
+	imageName := outputImage
+	strs := strings.Split(outputImage, ":")
+	imageName = strs[0]
+	if len(strs) > 1 {
+		imageTag = strs[1]
+	}
+
+	outputDigest := ""
+	if br.Status.Output != nil {
+		outputDigest = br.Status.Output.Digest
+		outputImage = fmt.Sprintf("%s@%s", outputImage, outputDigest)
+	}
+
+	customRunResults := []tknv1beta1.CustomRunResult{
+		{Name: "shp-image", Value: outputImage},
+		{Name: "shp-image-name", Value: imageName},
+		{Name: "shp-image-tag", Value: imageTag},
+	}
+	if outputDigest != "" {
+		customRunResults = append(customRunResults, tknv1beta1.CustomRunResult{Name: "shp-image-digest", Value: outputDigest})
+	}
+	return customRunResults
 }
 
 // Reconcile reconciles the Custom-Tasks Run instances pointing to Shipwright Builds, by issuing a
